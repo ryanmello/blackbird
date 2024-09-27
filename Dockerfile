@@ -12,4 +12,7 @@ ENV PATH="/go/bin:${PATH}"
 
 RUN go build -o /blackbird
 
+# Set the working directory to the mounted workspace
+WORKDIR /github/workspace
+
 ENTRYPOINT ["/blackbird"]

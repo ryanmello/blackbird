@@ -14,19 +14,30 @@ type Finding struct {
 }
 
 func main() {
-	workspaceDir := "."
+	// Get the workspace directory from command line arguments
+	workspaceDir := "/github/workspace"
 	if len(os.Args) > 1 {
 		workspaceDir = os.Args[1]
 	}
 
+	// Change to the workspace directory
 	if err := os.Chdir(workspaceDir); err != nil {
 		fmt.Printf("Failed to change to workspace directory %s: %v\n", workspaceDir, err)
 		os.Exit(1)
 	}
 
+	// Run go mod download to ensure all dependencies are available
+	modCmd := exec.Command("go", "mod", "download")
+	if err := modCmd.Run(); err != nil {
+		fmt.Printf("Failed to download dependencies: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Use the current directory for scanning
 	scanPath := "./..."
 
-	cmd := exec.Command("govulncheck", "-format=json", scanPath)
+	// Run govulncheck with verbose output
+	cmd := exec.Command("govulncheck", "-format=json", "-v", scanPath)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
