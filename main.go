@@ -41,7 +41,13 @@ func main() {
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		fmt.Println("Failed to get stdout", err)
+		fmt.Println("Failed to get stdout:", err)
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		fmt.Println("Failed to get stderr:", err)
 		return
 	}
 
@@ -49,6 +55,14 @@ func main() {
 		fmt.Println("Failed to start govulncheck:", err)
 		os.Exit(1)
 	}
+
+	// Read stderr in a separate goroutine
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			fmt.Println("govulncheck stderr:", scanner.Text())
+		}
+	}()
 
 	scanner := bufio.NewScanner(stdout)
 	findings := []Finding{}
@@ -78,6 +92,7 @@ func main() {
 
 	if err := cmd.Wait(); err != nil {
 		fmt.Println("govulncheck encountered an error:", err)
+		os.Exit(1)
 	}
 
 	if len(findings) > 0 {
