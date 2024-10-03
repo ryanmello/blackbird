@@ -36,8 +36,8 @@ func main() {
 	// Use the current directory for scanning
 	scanPath := "./..."
 
-	// Run govulncheck with verbose output
-	cmd := exec.Command("govulncheck", "-format=json", "-v", scanPath)
+	// Run govulncheck
+	cmd := exec.Command("govulncheck", "-format=json", scanPath)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
