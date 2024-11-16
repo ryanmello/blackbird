@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +11,33 @@ import (
 type Finding struct {
 	OSV          string `json:"osv"`
 	FixedVersion string `json:"fixed_version"`
+}
+
+type VulnCheckOutput struct {
+	Config struct {
+		ProtocolVersion string `json:"protocol_version"`
+		ScannerName     string `json:"scanner_name"`
+		ScannerVersion  string `json:"scanner_version"`
+		DB              string `json:"db"`
+		GoVersion       string `json:"go_version"`
+		ScanLevel       string `json:"scan_level"`
+		ScanMode        string `json:"scan_mode"`
+	} `json:"config"`
+	Findings []struct {
+		OSV          string `json:"osv"`
+		FixedVersion string `json:"fixed_version"`
+		Trace        []struct {
+			Module   string `json:"module"`
+			Version  string `json:"version"`
+			Package  string `json:"package"`
+			Function string `json:"function"`
+			Position struct {
+				Filename string `json:"filename"`
+				Line     int    `json:"line"`
+				Column   int    `json:"column"`
+			} `json:"position"`
+		} `json:"trace"`
+	} `json:"findings"`
 }
 
 func runCommand(name string, arg ...string) error {
@@ -70,72 +97,33 @@ func main() {
 
 	// Run govulncheck
 	cmd := exec.Command("govulncheck", "-format=json", scanPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		fmt.Println("Failed to get stdout:", err)
-		return
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		fmt.Println("Failed to get stderr:", err)
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		fmt.Println("Failed to start govulncheck:", err)
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("govulncheck encountered an error: %v\n", err)
+		fmt.Printf("Stderr output: %s\n", stderr.String())
 		os.Exit(1)
 	}
 
-	// Read stderr in a separate goroutine
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			fmt.Println("govulncheck stderr:", scanner.Text())
-		}
-	}()
-
-	scanner := bufio.NewScanner(stdout)
-	findings := []Finding{}
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		fmt.Printf("Raw govulncheck output: %s\n", string(line))
-
-		var obj map[string]any
-		if err := json.Unmarshal(line, &obj); err != nil {
-			fmt.Printf("Failed to unmarshal JSON: %v\n", err)
-			continue
-		}
-
-		if findingData, ok := obj["finding"]; ok {
-			rawFinding, err := json.Marshal(findingData)
-			if err != nil {
-				fmt.Printf("Failed to marshal finding: %v\n", err)
-				continue
-			}
-
-			var finding Finding
-			if err := json.Unmarshal(rawFinding, &finding); err != nil {
-				fmt.Printf("Failed to unmarshal finding: %v\n", err)
-				continue
-			}
-
-			findings = append(findings, finding)
-		}
-	}
-
-	if err := cmd.Wait(); err != nil {
-		fmt.Println("govulncheck encountered an error:", err)
+	// Parse the JSON output
+	var output VulnCheckOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		fmt.Printf("Failed to parse govulncheck output: %v\n", err)
+		fmt.Printf("Raw output: %s\n", stdout.String())
 		os.Exit(1)
 	}
 
-	if len(findings) > 0 {
+	if len(output.Findings) > 0 {
 		fmt.Println("🚨 Vulnerabilities found:")
-		for _, f := range findings {
+		for _, f := range output.Findings {
 			link := fmt.Sprintf("https://pkg.go.dev/vuln/%s", f.OSV)
 			fmt.Printf("- [%s](%s) — Fixed in: %s\n", f.OSV, link, f.FixedVersion)
+			fmt.Println("  Trace:")
+			for _, t := range f.Trace {
+				fmt.Printf("  - %s@%s: %s.%s\n", t.Module, t.Version, t.Package, t.Function)
+			}
 		}
 		os.Exit(1)
 	} else {
