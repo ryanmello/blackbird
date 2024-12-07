@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 type Finding struct {
@@ -13,31 +14,22 @@ type Finding struct {
 	FixedVersion string `json:"fixed_version"`
 }
 
-type VulnCheckOutput struct {
-	Config struct {
-		ProtocolVersion string `json:"protocol_version"`
-		ScannerName     string `json:"scanner_name"`
-		ScannerVersion  string `json:"scanner_version"`
-		DB              string `json:"db"`
-		GoVersion       string `json:"go_version"`
-		ScanLevel       string `json:"scan_level"`
-		ScanMode        string `json:"scan_mode"`
-	} `json:"config"`
-	Findings []struct {
-		OSV          string `json:"osv"`
-		FixedVersion string `json:"fixed_version"`
-		Trace        []struct {
-			Module   string `json:"module"`
-			Version  string `json:"version"`
-			Package  string `json:"package"`
-			Function string `json:"function"`
-			Position struct {
-				Filename string `json:"filename"`
-				Line     int    `json:"line"`
-				Column   int    `json:"column"`
-			} `json:"position"`
-		} `json:"trace"`
-	} `json:"findings"`
+type OSV struct {
+	ID       string `json:"id"`
+	Summary  string `json:"summary"`
+	Details  string `json:"details"`
+	Affected []struct {
+		Package struct {
+			Name string `json:"name"`
+		} `json:"package"`
+		Ranges []struct {
+			Type   string `json:"type"`
+			Events []struct {
+				Introduced string `json:"introduced"`
+				Fixed      string `json:"fixed"`
+			} `json:"events"`
+		} `json:"ranges"`
+	} `json:"affected"`
 }
 
 func runCommand(name string, arg ...string) error {
@@ -107,23 +99,42 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse the JSON output
-	var output VulnCheckOutput
-	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
-		fmt.Printf("Failed to parse govulncheck output: %v\n", err)
-		fmt.Printf("Raw output: %s\n", stdout.String())
-		os.Exit(1)
+	// Split the output into individual JSON objects
+	output := stdout.String()
+	objects := strings.Split(output, "\n}\n{")
+
+	// Process each JSON object
+	vulnerabilities := make(map[string]string)
+	for i, obj := range objects {
+		// Fix the JSON formatting
+		if i == 0 {
+			obj = obj + "}"
+		} else if i == len(objects)-1 {
+			obj = "{" + obj
+		} else {
+			obj = "{" + obj + "}"
+		}
+
+		// Try to parse as OSV
+		var osv OSV
+		if err := json.Unmarshal([]byte(obj), &osv); err == nil && osv.ID != "" {
+			// Extract the fixed version from the first affected range
+			if len(osv.Affected) > 0 && len(osv.Affected[0].Ranges) > 0 {
+				for _, event := range osv.Affected[0].Ranges[0].Events {
+					if event.Fixed != "" {
+						vulnerabilities[osv.ID] = event.Fixed
+						break
+					}
+				}
+			}
+		}
 	}
 
-	if len(output.Findings) > 0 {
+	if len(vulnerabilities) > 0 {
 		fmt.Println("🚨 Vulnerabilities found:")
-		for _, f := range output.Findings {
-			link := fmt.Sprintf("https://pkg.go.dev/vuln/%s", f.OSV)
-			fmt.Printf("- [%s](%s) — Fixed in: %s\n", f.OSV, link, f.FixedVersion)
-			fmt.Println("  Trace:")
-			for _, t := range f.Trace {
-				fmt.Printf("  - %s@%s: %s.%s\n", t.Module, t.Version, t.Package, t.Function)
-			}
+		for id, fixedVersion := range vulnerabilities {
+			link := fmt.Sprintf("https://pkg.go.dev/vuln/%s", id)
+			fmt.Printf("- [%s](%s) — Fixed in: %s\n", id, link, fixedVersion)
 		}
 		os.Exit(1)
 	} else {
