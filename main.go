@@ -84,11 +84,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Use the current directory for scanning
-	scanPath := "./..."
-
-	// Run govulncheck
-	cmd := exec.Command("govulncheck", "-format=json", scanPath)
+	// Run govulncheck with -scan=all to ensure we scan all dependencies
+	cmd := exec.Command("govulncheck", "-format=json", "-scan=all", "./...")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
