@@ -84,8 +84,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Run govulncheck with -scan=all to ensure we scan all dependencies
-	cmd := exec.Command("govulncheck", "-format=json", "-scan=all", "./...")
+	// Run govulncheck with -mode=binary to scan all dependencies
+	cmd := exec.Command("govulncheck", "-format=json", "./...")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

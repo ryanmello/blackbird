@@ -5,8 +5,10 @@ inputs: {}
 runs:
   using: docker
   image: Dockerfile
+  env:
+    GITHUB_WORKSPACE: ${{ github.workspace }}
   args:
-    - /github/workspace
+    - ${{ github.workspace }}
 branding:
   icon: "box"
   color: "black"
