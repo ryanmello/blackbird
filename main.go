@@ -14,11 +14,18 @@ type Finding struct {
 }
 
 func main() {
-	scanPath := "./..."
+	workspaceDir := "."
 	if len(os.Args) > 1 {
-		scanPath = os.Args[1]
+		workspaceDir = os.Args[1]
 	}
-	
+
+	if err := os.Chdir(workspaceDir); err != nil {
+		fmt.Printf("Failed to change to workspace directory %s: %v\n", workspaceDir, err)
+		os.Exit(1)
+	}
+
+	scanPath := "./..."
+
 	cmd := exec.Command("govulncheck", "-format=json", scanPath)
 
 	stdout, err := cmd.StdoutPipe()

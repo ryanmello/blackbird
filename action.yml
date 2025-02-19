@@ -6,7 +6,7 @@ runs:
   using: docker
   image: Dockerfile
   args:
-    - .
+    - ${{ github.workspace }}
 branding:
   icon: "box"
   color: "black"
