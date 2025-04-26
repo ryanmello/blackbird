@@ -1,4 +1,4 @@
-name: "Blackbird-007"
+name: "Blackbird-FL8"
 description: "Checks Go files for common errors using go vet"
 author: "Ryan Mello"
 inputs: {}
