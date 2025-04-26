@@ -1,4 +1,4 @@
-name: "Blackbird"
+name: "Blackbird-007"
 description: "Checks Go files for common errors using go vet"
 author: "Ryan Mello"
 inputs: {}
@@ -6,5 +6,5 @@ runs:
   using: "docker"
   image: "Dockerfile"
 branding:
-  icon: "bird"
+  icon: "box"
   color: "black"
