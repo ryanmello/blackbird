@@ -36,6 +36,13 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Print each file being analyzed
+	fmt.Println("🔍 Analyzing Go files:")
+	for _, file := range goFiles {
+		fmt.Printf("   - %s\n", file)
+	}
+	fmt.Println()
+
 	// Run go vet on all found Go files
 	cmd := exec.Command("go", "vet", "./...")
 	cmd.Stdout = os.Stdout
