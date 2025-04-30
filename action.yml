@@ -3,8 +3,10 @@ description: "Checks Go files for common errors using go vet"
 author: "Ryan Mello"
 inputs: {}
 runs:
-  using: "docker"
-  image: "Dockerfile"
+  using: docker
+  image: Dockerfile
+  args:
+    - ${{ github.workspace }}
 branding:
   icon: "box"
   color: "black"

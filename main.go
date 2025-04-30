@@ -14,7 +14,12 @@ type Finding struct {
 }
 
 func main() {
-	cmd := exec.Command("govulncheck", "-format=json", "./...")
+	scanPath := "./..."
+	if len(os.Args) > 1 {
+		scanPath = os.Args[1]
+	}
+	
+	cmd := exec.Command("govulncheck", "-format=json", scanPath)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
