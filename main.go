@@ -1,57 +1,70 @@
 package main
 
 import (
-	"flag"
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
+type Finding struct {
+	OSV          string `json:"osv"`
+	FixedVersion string `json:"fixed_version"`
+}
+
 func main() {
-	// Define command line flags
-	dir := flag.String("dir", ".", "Directory to check for Go files")
-	flag.Parse()
+	cmd := exec.Command("govulncheck", "-format=json", "./...")
 
-	// Find all Go files in the specified directory
-	var goFiles []string
-	err := filepath.Walk(*dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(path, ".go") {
-			goFiles = append(goFiles, path)
-		}
-		return nil
-	})
-
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		fmt.Printf("Error walking directory: %v\n", err)
+		fmt.Println("Failed to get stdout", err)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		fmt.Println("Failed to start govulncheck:", err)
 		os.Exit(1)
 	}
 
-	if len(goFiles) == 0 {
-		fmt.Printf("No Go files found in directory: %s\n", *dir)
-		os.Exit(0)
+	scanner := bufio.NewScanner(stdout)
+	findings := []Finding{}
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+
+		var obj map[string]any
+		if err := json.Unmarshal(line, &obj); err != nil {
+			continue
+		}
+
+		if findingData, ok := obj["finding"]; ok {
+			rawFinding, err := json.Marshal(findingData)
+			if err != nil {
+				continue
+			}
+
+			var finding Finding
+			if err := json.Unmarshal(rawFinding, &finding); err != nil {
+				continue
+			}
+
+			findings = append(findings, finding)
+		}
 	}
 
-	// Print each file being analyzed
-	fmt.Println("🔍 Analyzing Go files:")
-	for _, file := range goFiles {
-		fmt.Printf("   - %s\n", file)
+	if err := cmd.Wait(); err != nil {
+		fmt.Println("govulncheck encountered an error:", err)
 	}
-	fmt.Println()
 
-	// Run go vet on all found Go files
-	cmd := exec.Command("go", "vet", "./...")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		fmt.Println("❌ Go vet found issues in the code")
+	if len(findings) > 0 {
+		fmt.Println("🚨 Vulnerabilities found:")
+		for _, f := range findings {
+			link := fmt.Sprintf("https://pkg.go.dev/vuln/%s", f.OSV)
+			fmt.Printf("- [%s](%s) — Fixed in: %s\n", f.OSV, link, f.FixedVersion)
+		}
 		os.Exit(1)
+	} else {
+		fmt.Println("✅ No vulnerabilities found!")
 	}
-
-	fmt.Println("✅ All Go files passed vet check")
 }
