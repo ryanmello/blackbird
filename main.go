@@ -14,124 +14,89 @@ type Finding struct {
 	FixedVersion string `json:"fixed_version"`
 }
 
-type OSV struct {
-	ID       string `json:"id"`
-	Summary  string `json:"summary"`
-	Details  string `json:"details"`
-	Affected []struct {
-		Package struct {
-			Name string `json:"name"`
-		} `json:"package"`
-		Ranges []struct {
-			Type   string `json:"type"`
-			Events []struct {
-				Introduced string `json:"introduced"`
-				Fixed      string `json:"fixed"`
-			} `json:"events"`
-		} `json:"ranges"`
-	} `json:"affected"`
-}
-
-func runCommand(name string, arg ...string) error {
-	cmd := exec.Command(name, arg...)
+// runCommand executes a shell command and prints its output.
+// If the command fails, it returns an error.
+func runCommand(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
+	fmt.Printf("$ %s %s\n%s\n", name, strings.Join(args, " "), string(output))
 	if err != nil {
-		return fmt.Errorf("command %s failed: %v\nOutput: %s", name, err, string(output))
+		return fmt.Errorf("command %s failed: %v", name, err)
 	}
-	fmt.Printf("Command %s output:\n%s\n", name, string(output))
 	return nil
 }
 
 func main() {
-	// Get the workspace directory from command line arguments
-	workspaceDir := "/github/workspace"
+	workspace := "/github/workspace"
 	if len(os.Args) > 1 {
-		workspaceDir = os.Args[1]
+		workspace = os.Args[1]
 	}
 
-	// Print current directory and its contents
-	if dir, err := os.Getwd(); err == nil {
-		fmt.Printf("Current directory: %s\n", dir)
+	// Change to workspace directory
+	if err := os.Chdir(workspace); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to switch to workspace %s: %v\n", workspace, err)
+		os.Exit(1)
 	}
-	if files, err := os.ReadDir("."); err == nil {
-		fmt.Println("Directory contents:")
-		for _, file := range files {
-			fmt.Printf("- %s\n", file.Name())
+
+	// Ensure Go and dependencies are ready
+	steps := [][]string{
+		{"go", "version"},
+		{"go", "list", "-m", "all"},
+		{"go", "mod", "download"},
+	}
+	for _, step := range steps {
+		if err := runCommand(step[0], step[1:]...); err != nil {
+			os.Exit(1)
 		}
 	}
 
-	// Change to the workspace directory
-	if err := os.Chdir(workspaceDir); err != nil {
-		fmt.Printf("Failed to change to workspace directory %s: %v\n", workspaceDir, err)
-		os.Exit(1)
-	}
-
-	// Print Go version
-	if err := runCommand("go", "version"); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	// Print all dependencies
-	if err := runCommand("go", "list", "-m", "all"); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	// Run go mod download to ensure all dependencies are available
-	if err := runCommand("go", "mod", "download"); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
+	// Run govulncheck
 	cmd := exec.Command("govulncheck", "-format=json", "./...")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("govulncheck encountered an error: %v\n", err)
-		fmt.Printf("Stderr output: %s\n", stderr.String())
+		fmt.Fprintf(os.Stderr, "❌ govulncheck failed: %v\n%s\n", err, stderr.String())
 		os.Exit(1)
 	}
 
-	// Split the output into individual JSON objects
-	output := stdout.String()
-	objects := strings.Split(output, "\n}\n{")
-
-	// Process each JSON object
-	vulnerabilities := make(map[string]string)
-	for i, obj := range objects {
-		// Fix the JSON formatting
-		if i == 0 {
-			obj = obj + "}"
-		} else if i == len(objects)-1 {
-			obj = "{" + obj
-		} else {
-			obj = "{" + obj + "}"
+	// Parse JSON output and collect findings
+	vulns := make(map[string]string)
+	for _, raw := range strings.Split(stdout.String(), "\n}\n{") {
+		// Normalize line-delimited JSON object
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if !strings.HasPrefix(raw, "{") {
+			raw = "{" + raw
+		}
+		if !strings.HasSuffix(raw, "}") {
+			raw = raw + "}"
 		}
 
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(obj), &raw); err != nil {
+		var wrapper map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &wrapper); err != nil {
 			continue
 		}
 
-		if data, ok := raw["finding"]; ok {
+		if data, ok := wrapper["finding"]; ok {
 			var f Finding
 			if err := json.Unmarshal(data, &f); err == nil && f.OSV != "" {
-				vulnerabilities[f.OSV] = f.FixedVersion
+				vulns[f.OSV] = f.FixedVersion
 			}
 		}
 	}
 
-	if len(vulnerabilities) > 0 {
-		fmt.Println("🚨 Vulnerabilities found:")
-		for id, fixedVersion := range vulnerabilities {
-			link := fmt.Sprintf("https://pkg.go.dev/vuln/%s", id)
-			fmt.Printf("- [%s](%s) — Fixed in: %s\n", id, link, fixedVersion)
+	// Print summary
+	if len(vulns) > 0 {
+		fmt.Printf("🚨 %d vulnerabilities found:\n", len(vulns))
+		for id, fix := range vulns {
+			fmt.Printf("- [%s](https://pkg.go.dev/vuln/%s) — Fixed in: %s\n", id, id, fix)
 		}
 		os.Exit(1)
-	} else {
-		fmt.Println("✅ No vulnerabilities found!")
 	}
+
+	fmt.Println("✅ No vulnerabilities found!")
 }

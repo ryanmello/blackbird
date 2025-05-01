@@ -1,15 +1,10 @@
 name: Blackbird
 
 on:
-  pull_request:
-    paths:
-      - "go.mod"
-      - "go.sum"
   push:
     branches: [main]
-    paths:
-      - "go.mod"
-      - "go.sum"
+  pull_request:
+    branches: [main]
 
 jobs:
   fly:
