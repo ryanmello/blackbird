@@ -84,7 +84,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Run govulncheck with -mode=binary to scan all dependencies
 	cmd := exec.Command("govulncheck", "-format=json", "./...")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -112,17 +111,15 @@ func main() {
 			obj = "{" + obj + "}"
 		}
 
-		// Try to parse as OSV
-		var osv OSV
-		if err := json.Unmarshal([]byte(obj), &osv); err == nil && osv.ID != "" {
-			// Extract the fixed version from the first affected range
-			if len(osv.Affected) > 0 && len(osv.Affected[0].Ranges) > 0 {
-				for _, event := range osv.Affected[0].Ranges[0].Events {
-					if event.Fixed != "" {
-						vulnerabilities[osv.ID] = event.Fixed
-						break
-					}
-				}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(obj), &raw); err != nil {
+			continue
+		}
+
+		if data, ok := raw["finding"]; ok {
+			var f Finding
+			if err := json.Unmarshal(data, &f); err == nil && f.OSV != "" {
+				vulnerabilities[f.OSV] = f.FixedVersion
 			}
 		}
 	}
